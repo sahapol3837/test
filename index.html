@@ -3,84 +3,113 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ระบบผังเครือญาติ - Family Tree</title>
+    <title>ผังเครือญาติจากไฟล์ CSV</title>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background-color: #f4f6f9;
             margin: 0;
-            padding: 200px;
+            padding: 20px;
         }
         h1 {
             text-align: center;
             color: #333;
         }
-        /* พื้นหลังของผังตั้งค่าเป็นพิกัดสมบูรณ์ (Absolute) */
         #tree-container {
             position: relative;
             width: 100%;
-            height: 600px;
+            height: 750px;
             background-color: #ffffff;
             border: 1px solid #e1e4e8;
             border-radius: 8px;
             box-shadow: 0 4px 6px rgba(0,0,0,0.05);
             overflow: auto;
         }
-        /* สไตล์กล่องรายชื่อบุคคล */
         .tree-box {
             position: absolute;
             width: 120px;
             height: 50px;
             border-radius: 6px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 14px;
+            text-align: center;
+            font-size: 13px;
+            padding-top: 5px;
+            box-sizing: border-box;
             z-index: 2;
-            transition: all 0.2s ease;
         }
-        /* แยกสีตามเพศเหมือนในผังต้นฉบับ */
-        .tree-box.m { background-color: #e3f2fd; border: 2px solid #2196f3; color: #0d47a1; } /* ชาย */
-        .tree-box.f { background-color: #fce4ec; border: 2px solid #e91e63; color: #880e4f; } /* หญิง */
+        .tree-box.m { background-color: #e3f2fd; border: 2px solid #2196f3; color: #0d47a1; }
+        .tree-box.f { background-color: #fce4ec; border: 2px solid #e91e63; color: #880e4f; }
         
-        /* สไตล์ของเส้นเชื่อมโยง */
         .tree-line {
             position: absolute;
             height: 2px;
-            transform-origin: 0 50%; /* ให้จุดหมุนของเส้นเริ่มต้นจากฝั่งซ้ายสุด */
+            transform-origin: 0 50%;
             z-index: 1;
         }
-        .tree-line.partner { border-top: 2px dashed #ff9800; }  /* เส้นสมรส/คู่รัก */
-        .tree-line.horizontal { border-top: 2px solid #757575; }/* เส้นแยกสายแนวขวาง */
-        .tree-line.vertical { border-top: 2px solid #757575; }  /* เส้นดิ่งสายเลือด */
+        .tree-line.partner { border-top: 2px dashed #ff9800; }
+        .tree-line.horizontal { border-top: 2px solid #757575; }
+        .tree-line.vertical { border-top: 2px solid #757575; }
     </style>
 </head>
 <body>
 
-    <h1>ผังเครือญาติจำลอง (Family Tree Layout)</h1>
+    <h1>ผังเครือญาติ (ประมวลผลจากข้อมูลตาราง CSV)</h1>
     
-    <!-- พื้นที่สำหรับแสดงผลผังต้นไม้ -->
     <div id="tree-container"></div>
 
-    <!-- เรียกใช้งานไฟล์ฟังก์ชันคำนวณ -->
     <script src="functions.js"></script>
     <script>
-        // 1. เตรียมรูปแบบข้อมูลเครือญาติ (f) ตามโครงสร้างสถาปัตยกรรมของโค้ดต้นฉบับ
-        // g = เพศ, name = ชื่อ, s = คู่สมรส (Spouse), c = อาร์เรย์ของลูก (Children)
-        const familyData = {
-            "GRANDPA": { g: "m", name: "คุณปู่สมศักดิ์", s: "GRANDMA", c: ["FATHER", "UNCLE"] },
-            "GRANDMA": { g: "f", name: "คุณย่าสมศรี", s: "GRANDPA", c: ["FATHER", "UNCLE"] },
-            "FATHER":  { g: "m", name: "คุณพ่อสมชาย", s: "MOTHER", c: ["ME", "SISTER"] },
-            "MOTHER":  { g: "f", name: "คุณแม่วิภา", s: "FATHER", c: ["ME", "SISTER"] },
-            "UNCLE":   { g: "m", name: "คุณอาสมยศ", s: null, c: [] },
-            "ME":      { g: "m", name: "ตัวฉันเอง", s: null, c: [] },
-            "SISTER":  { g: "f", name: "น้องสาว", s: null, c: [] }
-        };
+        // วางข้อความจำลองจากไฟล์ data.csv ของคุณตรงนี้ (รองรับทั้งเว้นวรรคแบบ Tab และ Comma)
+        const csvData = `id	name	father 	mother	spouse	gender
+1	เภา			2	ช
+2	สวัสดิ์			1	ญ
+3	คำเบ้า	1	2	4	ญ
+4	เดช			3	ช
+5	เชย	1	2	6	ช
+6	นวล			5	ญ
+7	เหมย	1	2	8	ช
+8	โอ๊ะ			7	ญ
+9	เกย	1	2	10	ญ
+10	บุญช้อน			9	ช
+11	แอ้	1	2		ช
+12	แม้ว	4	3	20|25|26	ช
+13	ขวัญ	4	3	21	ญ
+14	ตี๋	5	6	32|33|34	ช
+15	ตู่	5	6	22	ช
+16	ปุ๋ย	7	8	23	ญ
+17	ป๊อบ	7	8	24	ญ
+18	ทัด	10	9		ช
+19	แวน	10	9		ช
+20	น้อล			12	ญ
+21	ตอง			13	ช
+22	นุ้ย			15	ญ
+23	แซม			16	ช
+24	สมชาย			17	ช
+25	ดาว			12	ญ
+26	เบนซ์			12	ญ
+27	เอ	12	20		ญ
+28	อิ๋ง	12	20		ญ
+29	โตนนท์	21	13		ช
+30	โมน่า	21	13		ญ
+31	อะตอม	15	22		ญ
+32	โค้ง			14	ช
+33	ต้อง			14	ช
+34	ตั้ม			14	ช
+35	บี	12	25		ญ
+36	ซี	12	26		ช
+37	แป้ง	23	16		ญ
+38	ป๋อง	23	16		ญ
+39	ภูผา	24	17		ช
+40	ภูเขา	24	17		ญ`;
 
-        // 2. เรียกฟังก์ชันจัดตำแหน่งและวาดผังขึ้นหน้าจอ โดยเริ่มคำนวณจากยอดพีระมิด (คุณปู่)
         window.onload = function() {
-            let layoutResult = calculateFamilyLayout(familyData, "GRANDPA");
+            // 1. แปลงไฟล์ข้อความ CSV เป็น Object เครือญาติ
+            const parsedFamily = parseCSVToFamilyData(csvData);
+            
+            // 2. สั่งคำนวณโดยเริ่มที่ ID: "1" (ตาเภา ซึ่งเป็นต้นตระกูลสูงสุดรุ่นที่ 1)
+            const layoutResult = calculateFamilyLayout(parsedFamily, "1");
+            
+            // 3. เรนเดอร์ผังสายเลือดขนาดใหญ่ออกมาทางหน้าจอ
             renderFamilyTree(layoutResult, "tree-container");
         };
     </script>
