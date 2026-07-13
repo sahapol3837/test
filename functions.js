@@ -72,54 +72,69 @@ function parseCSVToFamilyData(csvText) {
 function calculateFamilyLayout(familyData, focusId) {
     let d = { l: 0, r: 0, w: 0, t: 0, b: 0, h: 0, e: {}, n: [] };
     let visited = {};
+    let currentXOffset = 0; // ตัวนับพิกัดสะสมเพื่อป้องกันกล่องชนกันในแนวนอน
 
-    function traverse(id, currentX, currentY) {
-        if (!id || visited[id] || !familyData[id]) return;
+    function traverse(id, currentY) {
+        if (!id || visited[id] || !familyData[id]) return null;
         visited[id] = true;
 
         let person = familyData[id];
         
-        // วาดกล่องบุคคล
-        d.e[id] = { person: person, x: currentX, y: currentY };
+        // กำหนดพิกัด X ให้กับคนนี้ตามตำแหน่งสะสมปัจจุบัน
+        let myX = currentXOffset;
+        d.e[id] = { person: person, x: myX, y: currentY };
+        currentXOffset += 1.4; // ขยับพื้นที่เผื่อไว้สำหรับคนถัดไป
 
-        // 1. จัดตำแหน่งและลากเส้นแต่งงาน (รองรับการมีคู่สมรสหลายคน)
-        let nextSpouseX = currentX;
+        // 1. จัดตำแหน่งให้คู่สมรสทุกคน (ถ้ามีหลายคน ขยับเรียงไปทางขวา)
         if (person.spouses && person.spouses.length > 0) {
-            person.spouses.forEach((spouseId, index) => {
+            person.spouses.forEach((spouseId) => {
                 if (familyData[spouseId] && !visited[spouseId]) {
-                    nextSpouseX += 1.5; // ขยับพิกัดคู่สมรสถัดไปทางขวา
-                    d.n.push({ x1: currentX, y1: currentY, x2: nextSpouseX, y2: currentY, type: "partner" });
-                    traverse(spouseId, nextSpouseX, currentY);
+                    let spouseX = currentXOffset;
+                    d.n.push({ x1: myX, y1: currentY, x2: spouseX, y2: currentY, type: "partner" });
+                    
+                    visited[spouseId] = true;
+                    d.e[spouseId] = { person: familyData[spouseId], x: spouseX, y: currentY };
+                    currentXOffset += 1.4; // ขยับหนีพิกัดเดิมเพื่อไม่ให้คู่สมรสทับกัน
                 }
             });
         }
 
-        // 2. จัดตำแหน่งลูกๆ ของบุคคลนั้น
+        // 2. จัดตำแหน่งให้ลูกๆ แบบขยับพิกัดแผ่ออกทางขวาเรื่อยๆ
         if (person.c && person.c.length > 0) {
-            let totalChildren = person.c.length;
-            // คำนวณขยายขอบกว้างตามจำนวนลูก
-            let startX = currentX - ((totalChildren - 1) * 1.3) / 2;
+            let childY = currentY + 1.2;
+            let childXCoordinates = [];
 
-            // เส้นดิ่งหลักจากพ่อแม่ลงมา
-            d.n.push({ x1: currentX, y1: currentY, x2: currentX, y2: currentY + 0.5, type: "vertical" });
-            
-            // เส้นแนวนอนกระจายสายเลือด
-            if (totalChildren > 1) {
-                d.n.push({ x1: startX, y1: currentY + 0.5, x2: startX + (totalChildren - 1) * 1.3, y2: currentY + 0.5, type: "horizontal" });
-            }
-
-            person.c.forEach((childId, index) => {
-                let childX = startX + index * 1.3;
-                let childY = currentY + 1.2;
-                
-                // เส้นดิ่งย่อยเข้าหัวกล่องลูก
-                d.n.push({ x1: childX, y1: currentY + 0.5, x2: childX, y2: childY, type: "vertical" });
-                traverse(childId, childX, childY);
+            // สั่งลูปขยายพิกัดลูกทุกคนลงไปชั้นล่างก่อน เพื่อเก็บค่าพิกัด X ของลูกแต่ละคน
+            person.c.forEach((childId) => {
+                if (!visited[childId]) {
+                    let cX = currentXOffset; // ยึดพิกัดล่าสุดที่ยังว่างอยู่
+                    childXCoordinates.push(cX);
+                    traverse(childId, childY);
+                } else if (d.e[childId]) {
+                    childXCoordinates.push(d.e[childId].x);
+                }
             });
+
+            // เมื่อได้ตำแหน่ง X ของลูกทุกคนแล้ว จึงนำมาลากเส้นเชื่อมโยงให้ตรงช่อง
+            if (childXCoordinates.length > 0) {
+                let minChildX = Math.min(...childXCoordinates);
+                let maxChildX = Math.max(...childXCoordinates);
+
+                // เส้นดิ่งหลักวิ่งลงมาจากตรงกลางระหว่างพ่อแม่
+                d.n.push({ x1: myX, y1: currentY, x2: myX, y2: currentY + 0.4, type: "vertical" });
+                
+                // เส้นแนวนอนยาวรองรับขอบเขตลูกทั้งหมด
+                d.n.push({ x1: minChildX, y1: currentY + 0.4, x2: maxChildX, y2: currentY + 0.4, type: "horizontal" });
+
+                // ลากเส้นดิ่งย่อยจากเส้นแนวนอนหลัก วิ่งเข้าหัวกล่องของลูกแต่ละคน
+                childXCoordinates.forEach((cX) => {
+                    d.n.push({ x1: cX, y1: currentY + 0.4, x2: cX, y2: childY, type: "vertical" });
+                });
+            }
         }
     }
 
-    traverse(focusId, 0, 0);
+    traverse(focusId, 0);
     return d;
 }
 
