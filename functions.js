@@ -72,69 +72,100 @@ function parseCSVToFamilyData(csvText) {
 function calculateFamilyLayout(familyData, focusId) {
     let d = { l: 0, r: 0, w: 0, t: 0, b: 0, h: 0, e: {}, n: [] };
     let visited = {};
-    let currentXOffset = 0; // ตัวนับพิกัดสะสมเพื่อป้องกันกล่องชนกันในแนวนอน
 
-    function traverse(id, currentY) {
-        if (!id || visited[id] || !familyData[id]) return null;
+    // ฟังก์ชันย่อยช่วยค้นหาคู่แต่งงานทั้งหมดที่ยังไม่ได้เรนเดอร์
+    function getUnvisitedSpouses(person) {
+        let list = [];
+        if (person.spouses) {
+            person.spouses.forEach(sid => {
+                if (familyData[sid] && !visited[sid]) list.push(sid);
+            });
+        }
+        return list;
+    }
+
+    // ฟังก์ชันคำนวณหลัก: จะส่งคืนค่า "พิกัดขอบขวาสุด" ที่ใช้ไปในกิ่งนั้นๆ เพื่อให้คนถัดไปขยับหลบได้พอดี
+    function traverse(id, currentX, currentY) {
+        if (!id || visited[id] || !familyData[id]) return currentX;
         visited[id] = true;
 
         let person = familyData[id];
+        let unvisitedSpouses = getUnvisitedSpouses(person);
         
-        // กำหนดพิกัด X ให้กับคนนี้ตามตำแหน่งสะสมปัจจุบัน
-        let myX = currentXOffset;
-        d.e[id] = { person: person, x: myX, y: currentY };
-        currentXOffset += 1.4; // ขยับพื้นที่เผื่อไว้สำหรับคนถัดไป
+        // 1. คำนวณความกว้างพื้นฐานของตัวเองและคู่สมรส
+        // ปู่/ตา 1 กล่อง + คู่สมรสทุกคน กล่องละ 1.4 หน่วย
+        let myWidth = 1 + (unvisitedSpouses.length * 1.4);
+        let myEndX = currentX + myWidth;
 
-        // 1. จัดตำแหน่งให้คู่สมรสทุกคน (ถ้ามีหลายคน ขยับเรียงไปทางขวา)
-        if (person.spouses && person.spouses.length > 0) {
-            person.spouses.forEach((spouseId) => {
-                if (familyData[spouseId] && !visited[spouseId]) {
-                    let spouseX = currentXOffset;
-                    d.n.push({ x1: myX, y1: currentY, x2: spouseX, y2: currentY, type: "partner" });
-                    
-                    visited[spouseId] = true;
-                    d.e[spouseId] = { person: familyData[spouseId], x: spouseX, y: currentY };
-                    currentXOffset += 1.4; // ขยับหนีพิกัดเดิมเพื่อไม่ให้คู่สมรสทับกัน
-                }
-            });
+        // วาดกล่องของตัวเองก่อน
+        d.e[id] = { person: person, x: currentX, y: currentY };
+
+        // วาดกล่องคู่สมรสเรียงต่อกันไปทางขวา พร้อมลากเส้นแต่งงาน
+        let nextSpouseX = currentX;
+        unvisitedSpouses.forEach((spouseId) => {
+            nextSpouseX += 1.4;
+            visited[spouseId] = true;
+            d.e[spouseId] = { person: familyData[spouseId], x: nextSpouseX, y: currentY };
+            d.n.push({ x1: currentX, y1: currentY, x2: nextSpouseX, y2: currentY, type: "partner" });
+        });
+
+        // หาจุดกึ่งกลางระหว่าง พ่อ กับ แม่คนแรก (ใช้เป็นจุดปล่อยเส้นดิ่งลงมาหาลูก)
+        let centerParentX = currentX;
+        if (unvisitedSpouses.length > 0) {
+            centerParentX = (currentX + (currentX + 1.4)) / 2;
         }
 
-        // 2. จัดตำแหน่งให้ลูกๆ แบบขยับพิกัดแผ่ออกทางขวาเรื่อยๆ
+        // 2. คำนวณและจัดตำแหน่งกลุ่มลูกๆ 
         if (person.c && person.c.length > 0) {
             let childY = currentY + 1.2;
             let childXCoordinates = [];
+            let childNextX = currentX; // ให้ลูกคนแรกเริ่มที่พิกัดซ้ายสุดของบ้านตัวเอง
 
-            // สั่งลูปขยายพิกัดลูกทุกคนลงไปชั้นล่างก่อน เพื่อเก็บค่าพิกัด X ของลูกแต่ละคน
             person.c.forEach((childId) => {
                 if (!visited[childId]) {
-                    let cX = currentXOffset; // ยึดพิกัดล่าสุดที่ยังว่างอยู่
-                    childXCoordinates.push(cX);
-                    traverse(childId, childY);
+                    // วนลูปวาดกิ่งของลูกคนนี้ และรับค่าพิกัดขอบขวาสุดที่ลูกคนนี้ใช้ไปกลับมา
+                    let childEndX = traverse(childId, childNextX, childY);
+                    
+                    // บันทึกตำแหน่ง X ของลูกคนนี้เพื่อเอาไว้ลากเส้นเชื่อม
+                    if (d.e[childId]) {
+                        childXCoordinates.push(d.e[childId].x);
+                    }
+                    
+                    // ลูกคนถัดไปต้องเริ่มต่อจากขอบขวาสุดของกิ่งพี่คนก่อนหน้า + ช่องว่างขยับหนีอีกเล็กน้อย
+                    childNextX = Math.max(childEndX, childNextX + 1.4);
                 } else if (d.e[childId]) {
                     childXCoordinates.push(d.e[childId].x);
                 }
             });
 
-            // เมื่อได้ตำแหน่ง X ของลูกทุกคนแล้ว จึงนำมาลากเส้นเชื่อมโยงให้ตรงช่อง
+            // ปรับขนาดความกว้างรวมของบ้านนี้ ถ้ากิ่งของลูกๆ แผ่ออกไปไกลกว่าตัวพ่อแม่
+            if (childNextX > myEndX) {
+                myEndX = childNextX;
+            }
+
+            // ลากเส้นเชื่อมโยงระบบสายเลือดเข้าหาลูกทุกคนอย่างแม่นยำ
             if (childXCoordinates.length > 0) {
                 let minChildX = Math.min(...childXCoordinates);
                 let maxChildX = Math.max(...childXCoordinates);
 
-                // เส้นดิ่งหลักวิ่งลงมาจากตรงกลางระหว่างพ่อแม่
-                d.n.push({ x1: myX, y1: currentY, x2: myX, y2: currentY + 0.4, type: "vertical" });
+                // 1. เส้นดิ่งหลักวิ่งลงมาจากกึ่งกลางพ่อแม่
+                d.n.push({ x1: centerParentX, y1: currentY, x2: centerParentX, y2: currentY + 0.4, type: "vertical" });
                 
-                // เส้นแนวนอนยาวรองรับขอบเขตลูกทั้งหมด
-                d.n.push({ x1: minChildX, y1: currentY + 0.4, x2: maxChildX, y2: currentY + 0.4, type: "horizontal" });
+                // 2. เส้นแนวนอนเชื่อมจุดดิ่งพ่อแม่ วิ่งไปหาพิกัดซ้ายสุดและขวาสุดของกลุ่มลูก
+                d.n.push({ x1: Math.min(centerParentX, minChildX), y1: currentY + 0.4, x2: Math.max(centerParentX, maxChildX), y2: currentY + 0.4, type: "horizontal" });
 
-                // ลากเส้นดิ่งย่อยจากเส้นแนวนอนหลัก วิ่งเข้าหัวกล่องของลูกแต่ละคน
+                // 3. เส้นดิ่งย่อยสับลงหัวกล่องลูกแต่ละคน
                 childXCoordinates.forEach((cX) => {
                     d.n.push({ x1: cX, y1: currentY + 0.4, x2: cX, y2: childY, type: "vertical" });
                 });
             }
         }
+
+        return myEndX; // ส่งคืนค่าพิกัดขวาสุดที่กิ่งนี้ใช้ไปทั้งหมด
     }
 
-    traverse(focusId, 0);
+    // เริ่มคำนวณจาก ID 1 แผ่พิกัดเริ่มต้นที่ X = 0
+    traverse(focusId, 0, 0);
     return d;
 }
 
