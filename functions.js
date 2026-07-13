@@ -5,37 +5,52 @@ function parseCSVToFamilyData(csvText) {
     const lines = csvText.trim().split("\n");
     const familyData = {};
 
-    // ลูปอ่านทีละบรรทัด (ข้ามบรรทัดแรกที่เป็น Header)
+    // 1. อ่านและทำความสะอาดชื่อคอลัมน์จาก Header บรรทัดแรก
+    const headers = lines[0].split(/\t|,/).map(h => h.trim().toLowerCase());
+    
+    // หาตำแหน่ง Index ของแต่ละคอลัมน์ป้องกันการสลับตำแหน่ง
+    const idIdx = headers.indexOf("id");
+    const nameIdx = headers.indexOf("name");
+    const fatherIdx = headers.findIndex(h => h.includes("father"));
+    const motherIdx = headers.findIndex(h => h.includes("mother"));
+    const spouseIdx = headers.findIndex(h => h.includes("spouse"));
+    const genderIdx = headers.findIndex(h => h.includes("gender"));
+
+    // 2. ลูปอ่านข้อมูลรายบรรทัด
     for (let i = 1; i < lines.length; i++) {
-        if (!lines[i]) continue;
+        if (!lines[i].trim()) continue;
         
-        // แยกข้อมูลด้วย Tab (\t) หรือ Comma (,) ตามรูปแบบของข้อมูลที่ส่งมา
+        // แยกข้อมูลคอลัมน์ด้วย Tab หรือ Comma
         const cols = lines[i].split(/\t|,/);
         
-        const id = cols[0].trim();
-        const name = cols[1].trim();
-        const father = cols[2] ? cols[2].trim() : "";
-        const mother = cols[3] ? cols[3].trim() : "";
-        const spouseRaw = cols[4] ? cols[4].trim() : "";
-        const gender = cols[5] ? cols[5].trim() : "";
+        // ใช้ .trim() ทุกตัวแปรเพื่อตัดช่องว่างลึกลับออกให้หมด
+        const id = cols[idIdx] ? cols[idIdx].trim() : "";
+        const name = cols[nameIdx] ? cols[nameIdx].trim() : "";
+        const father = cols[fatherIdx] ? cols[fatherIdx].trim() : "";
+        const mother = cols[motherIdx] ? cols[motherIdx].trim() : "";
+        const spouseRaw = cols[spouseIdx] ? cols[spouseIdx].trim() : "";
+        const gender = cols[genderIdx] ? cols[genderIdx].trim() : "";
 
-        // จัดการเรื่องคู่สมรสในกรณีที่มีมากกว่า 1 คน (แยกด้วยเครื่องหมาย |)
-        const spouses = spouseRaw ? spouseRaw.split("|") : [];
+        if (!id) continue; // ถ้าไม่มี ID ให้ข้ามบรรทัดนั้น
+
+        // จัดการแยกคู่สมรสด้วยเครื่องหมาย | และดักจับช่องว่างรอบๆ ID คู่สมรสด้วย
+        const spouses = spouseRaw ? spouseRaw.split("|").map(s => s.trim()).filter(s => s !== "") : [];
 
         familyData[id] = {
             id: id,
             name: name,
             father: father,
             mother: mother,
-            spouses: spouses, // บันทึกเป็นอาเรย์ของคู่สมรส
+            spouses: spouses,
             g: (gender === "ช") ? "m" : "f",
-            c: [] // จะเติมรายชื่อลูกๆ เข้ามาในขั้นตอนถัดไป
+            c: [] // เตรียมพื้นที่สำหรับลูกๆ
         };
     }
 
-    // ลูปซ้ำรอบที่สองเพื่อผูกสัมพันธ์ สร้างรายชื่อ "ลูก (c)" ให้กับพ่อและแม่โดยอัตโนมัติ
+    // 3. ผูกความสัมพันธ์หาลูก (Children) ให้พ่อและแม่
     for (let id in familyData) {
         const person = familyData[id];
+        
         if (person.father && familyData[person.father]) {
             if (!familyData[person.father].c.includes(id)) {
                 familyData[person.father].c.push(id);
